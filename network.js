@@ -36,7 +36,6 @@ function simulate(data, svg) {
     const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
     .domain(topCountries);
 
-console.log("Top Countries: ", topCountries);
 
     // Get color by country
     const getColorByCountry = (countries) => {
@@ -51,11 +50,9 @@ console.log("Top Countries: ", topCountries);
                 }
             }
             if (selectedCountry !== null) {
-                console.log(`Node with countries ${countries} gets color: purple`);
                 return "purple"; // Highlight top countries with purple
             }
         }
-        console.log(`Node with countries ${countries} gets color: orange`);
         return "#FF8C00";
     };
     
@@ -78,7 +75,7 @@ const node_elements = main_group.append("g")
 .enter()
 .append('g')
 .on("mouseover", function (event, d) {
-    const affiliations = d["Affiliation"];
+    const affiliations = d["Affiliation"] || [];
     // Highlight related nodes
     node_elements.selectAll("circle").style("opacity", nd => 
         nd["Affiliation"]?.some(a => affiliations.includes(a)) ? 1 : 0.2);
@@ -86,7 +83,7 @@ const node_elements = main_group.append("g")
     // Show tooltip
     const tooltip = d3.select(".tooltip");
     tooltip.transition().duration(200).style("opacity", .9);
-    tooltip.html(`Author: ${d.Authors}<br>Affiliation: ${d.Affiliation.join(", ")}`)
+    tooltip.html(`Author: ${d.Authors}<br>Affiliation: ${affiliations.join(", ")}`)
         .style("left", (event.pageX + 5) + "px")
         .style("top", (event.pageY - 28) + "px");
 })
@@ -105,14 +102,42 @@ node_elements.append("circle")
 .attr("fill", d => getColorByCountry(d["Affiliation Countries"]));
 
 
-    // Force simulation
+    // Read the current slider values
+    const sliderValue = id => +document.getElementById(id).value;
+    // Collision Radius slider: 12 (the default) gives 1.2 x each node's radius, as before
+    const collideRadius = d => scale_radius(node_degree[d.id] || 0) * sliderValue("collisionRadius") / 10;
+
+    // Force simulation, starting from the slider values
     const ForceSimulation = d3.forceSimulation(data.nodes)
-        .force("collide", d3.forceCollide().radius(d => scale_radius(node_degree[d.id] || 0) * 1.2))
+        .force("collide", d3.forceCollide().radius(collideRadius))
         .force("x", d3.forceX())
         .force("y", d3.forceY())
-        .force("charge", d3.forceManyBody().strength(-50))
-        .force("link", d3.forceLink(data.links).id(d => d.id).strength(0.5))
+        .force("charge", d3.forceManyBody().strength(sliderValue("chargeStrength")))
+        .force("link", d3.forceLink(data.links).id(d => d.id).strength(sliderValue("linkStrength")))
         .on("tick", ticked);
+
+    // Connect the sliders: update the force and restart the layout so the change is visible
+    function showValue(id) {
+        const out = document.getElementById(id + "Value");
+        if (out) out.textContent = document.getElementById(id).value;
+    }
+    ["chargeStrength", "collisionRadius", "linkStrength"].forEach(showValue);
+
+    d3.select("#chargeStrength").on("input", function () {
+        ForceSimulation.force("charge").strength(+this.value);
+        showValue("chargeStrength");
+        ForceSimulation.alpha(0.6).restart();
+    });
+    d3.select("#collisionRadius").on("input", function () {
+        ForceSimulation.force("collide").radius(collideRadius);
+        showValue("collisionRadius");
+        ForceSimulation.alpha(0.6).restart();
+    });
+    d3.select("#linkStrength").on("input", function () {
+        ForceSimulation.force("link").strength(+this.value);
+        showValue("linkStrength");
+        ForceSimulation.alpha(0.6).restart();
+    });
 
     // Update node and link positions on each tick
     function ticked() {
@@ -124,9 +149,30 @@ node_elements.append("circle")
             .attr("y2", d => d.target.y);
     }
 
-    // Zoom functionality
-    svg.call(d3.zoom()
+    // Zoom functionality (zooming out is allowed too, so the whole network can be seen)
+    let userZoomed = false;
+    const zoom = d3.zoom()
         .extent([[0, 0], [width, height]])
-        .scaleExtent([1, 8])
-        .on("zoom", ({ transform }) => main_group.attr("transform", transform)));
+        .scaleExtent([0.1, 8])
+        .on("zoom", ({ transform, sourceEvent }) => {
+            if (sourceEvent) userZoomed = true;   // the reader zoomed or dragged
+            main_group.attr("transform", transform);
+        });
+    svg.call(zoom);
+
+    // When the layout settles, fit the whole network in view (unless the reader has zoomed in themselves)
+    function fitToView() {
+        if (userZoomed) return;
+        const xs = data.nodes.map(d => d.x), ys = data.nodes.map(d => d.y);
+        const x0 = d3.min(xs), x1 = d3.max(xs), y0 = d3.min(ys), y1 = d3.max(ys);
+        const pad = 30;
+        const k = Math.min(8, (width - 2 * pad) / Math.max(1, x1 - x0), (height - 2 * pad) / Math.max(1, y1 - y0));
+        const cx = (x0 + x1) / 2 + width / 2, cy = (y0 + y1) / 2 + height / 2;
+        svg.transition().duration(600)
+            .call(zoom.transform, d3.zoomIdentity.translate(width / 2 - k * cx, height / 2 - k * cy).scale(k));
+    }
+    ForceSimulation.on("end", fitToView);
+
+    // A slider change starts a new layout, so fit it again when it settles
+    d3.selectAll("#chargeStrength, #collisionRadius, #linkStrength").on("change.fit", () => { userZoomed = false; });
 }
