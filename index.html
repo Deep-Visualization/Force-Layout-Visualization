@@ -32,20 +32,21 @@
     opacity: 0; /* Initially hidden */
     transition: opacity 0.2s ease-in-out;
 }
-
-        }
     </style>
 </head>
 <body>
     <div class="controls">
         <label>Charge Strength: 
             <input type="range" id="chargeStrength" min="-500" max="0" value="-50">
+            <output id="chargeStrengthValue">-50</output>
         </label>
         <label>Collision Radius: 
             <input type="range" id="collisionRadius" min="0" max="50" value="12">
+            <output id="collisionRadiusValue">12</output>
         </label>
         <label>Link Strength: 
             <input type="range" id="linkStrength" min="0" max="1" step="0.1" value="0.5">
+            <output id="linkStrengthValue">0.5</output>
         </label>
     </div>
     <div class="tooltip" style="opacity:0;"></div>
